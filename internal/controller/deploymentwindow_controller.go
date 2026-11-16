@@ -19,7 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -151,7 +151,7 @@ func (r *DeploymentWindowReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			log.Info("resumed deployment", "deployment", d.Name)
 		}
 	}
-	sort.Strings(pausedByUs)
+	slices.Sort(pausedByUs)
 
 	msg := fmt.Sprintf("window closed; %d deployment(s) paused", len(pausedByUs))
 	switch {
