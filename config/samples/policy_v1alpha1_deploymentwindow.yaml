@@ -1,9 +1,19 @@
+# Allow production rollouts only on weekdays, 09:00-17:00 Lagos time.
+# Outside these hours, Deployments labelled tier=prod are paused, so a new
+# image or config change waits until the window opens.
 apiVersion: policy.deploywindow.dev/v1alpha1
 kind: DeploymentWindow
 metadata:
-  labels:
-    app.kubernetes.io/name: deploy-window-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: deploymentwindow-sample
+  name: business-hours
+  namespace: default
 spec:
-  # TODO(user): Add fields here
+  selector:
+    matchLabels:
+      tier: prod
+  timeZone: Africa/Lagos
+  windows:
+    - days: [Mon, Tue, Wed, Thu, Fri]
+      start: "09:00"
+      end: "17:00"
+  # Set to true for an emergency fix outside the window.
+  suspend: false
