@@ -1,0 +1,9 @@
+apiVersion: policy.deploywindow.dev/v1alpha1
+kind: DeploymentWindow
+metadata:
+  labels:
+    app.kubernetes.io/name: deploy-window-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: deploymentwindow-sample
+spec:
+  # TODO(user): Add fields here
