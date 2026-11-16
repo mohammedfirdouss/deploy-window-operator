@@ -21,38 +21,67 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// Window is one period, on the given days, when rollouts are allowed.
+type Window struct {
+	// Days the window applies to. Three-letter English names.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:Enum=Mon;Tue;Wed;Thu;Fri;Sat;Sun
+	Days []string `json:"days"`
 
-// DeploymentWindowSpec defines the desired state of DeploymentWindow
-type DeploymentWindowSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// Start time in 24-hour HH:MM, in spec.timeZone.
+	// +kubebuilder:validation:Pattern=`^([01][0-9]|2[0-3]):[0-5][0-9]$`
+	Start string `json:"start"`
 
-	// foo is an example field of DeploymentWindow. Edit deploymentwindow_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// End time in 24-hour HH:MM, in spec.timeZone. Must be after start;
+	// windows do not cross midnight (use two windows instead).
+	// +kubebuilder:validation:Pattern=`^([01][0-9]|2[0-3]):[0-5][0-9]$`
+	End string `json:"end"`
 }
 
-// DeploymentWindowStatus defines the observed state of DeploymentWindow.
+// DeploymentWindowSpec defines when the selected Deployments may roll out.
+type DeploymentWindowSpec struct {
+	// Selector picks Deployments in the same namespace as this object.
+	Selector metav1.LabelSelector `json:"selector"`
+
+	// TimeZone is an IANA name such as "Africa/Lagos". Defaults to UTC.
+	// +kubebuilder:default=UTC
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
+	// Windows when rollouts are allowed. Outside all windows, the selected
+	// Deployments are paused (spec.paused=true) so new rollouts wait.
+	// +kubebuilder:validation:MinItems=1
+	Windows []Window `json:"windows"`
+
+	// Suspend stops the controller from pausing anything and resumes any
+	// Deployment it paused. Useful for an emergency fix outside a window.
+	// +optional
+	Suspend bool `json:"suspend,omitempty"`
+}
+
+// DeploymentWindowStatus is the observed state of a DeploymentWindow.
 type DeploymentWindowStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Open is true when rollouts are currently allowed.
+	// +optional
+	Open bool `json:"open"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// NextTransition is when Open will next change.
+	// +optional
+	NextTransition *metav1.Time `json:"nextTransition,omitempty"`
 
-	// conditions represent the current state of the DeploymentWindow resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// MatchedDeployments is how many Deployments the selector matches.
+	// +optional
+	MatchedDeployments int32 `json:"matchedDeployments"`
+
+	// PausedDeployments lists the Deployments this window has paused.
+	// +optional
+	PausedDeployments []string `json:"pausedDeployments,omitempty"`
+
+	// ObservedGeneration is the spec generation this status reflects.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions: "Ready" reports whether the spec is valid and was applied.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,30 +90,27 @@ type DeploymentWindowStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=dw
+// +kubebuilder:printcolumn:name="Open",type=boolean,JSONPath=`.status.open`
+// +kubebuilder:printcolumn:name="Matched",type=integer,JSONPath=`.status.matchedDeployments`
+// +kubebuilder:printcolumn:name="Next",type=date,JSONPath=`.status.nextTransition`
+// +kubebuilder:printcolumn:name="Suspended",type=boolean,JSONPath=`.spec.suspend`
 
-// DeploymentWindow is the Schema for the deploymentwindows API
+// DeploymentWindow pauses selected Deployments outside allowed time windows.
 type DeploymentWindow struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// metadata is a standard object metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
-
-	// spec defines the desired state of DeploymentWindow
-	// +required
-	Spec DeploymentWindowSpec `json:"spec"`
-
-	// status defines the observed state of DeploymentWindow
-	// +optional
-	Status DeploymentWindowStatus `json:"status,omitzero"`
+	Spec   DeploymentWindowSpec   `json:"spec"`
+	Status DeploymentWindowStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// DeploymentWindowList contains a list of DeploymentWindow
+// DeploymentWindowList contains a list of DeploymentWindow.
 type DeploymentWindowList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []DeploymentWindow `json:"items"`
 }
 
