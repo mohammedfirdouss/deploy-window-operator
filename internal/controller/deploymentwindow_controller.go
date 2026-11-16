@@ -209,10 +209,11 @@ func (r *DeploymentWindowReconciler) resumeAll(ctx context.Context, dw *policyv1
 }
 
 func (r *DeploymentWindowReconciler) setStatus(ctx context.Context, dw *policyv1alpha1.DeploymentWindow, mutate func(*policyv1alpha1.DeploymentWindowStatus)) error {
-	patch := client.MergeFrom(dw.DeepCopy())
+	// Update (not a merge patch) so false and empty values are written too;
+	// a merge patch would drop "open: false" when nothing else changed.
 	mutate(&dw.Status)
 	dw.Status.ObservedGeneration = dw.Generation
-	return r.Status().Patch(ctx, dw, patch)
+	return r.Status().Update(ctx, dw)
 }
 
 func toScheduleWindows(in []policyv1alpha1.Window) []schedule.Window {

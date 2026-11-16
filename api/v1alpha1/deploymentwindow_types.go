@@ -93,7 +93,7 @@ type DeploymentWindowStatus struct {
 // +kubebuilder:resource:shortName=dw
 // +kubebuilder:printcolumn:name="Open",type=boolean,JSONPath=`.status.open`
 // +kubebuilder:printcolumn:name="Matched",type=integer,JSONPath=`.status.matchedDeployments`
-// +kubebuilder:printcolumn:name="Next",type=date,JSONPath=`.status.nextTransition`
+// +kubebuilder:printcolumn:name="Next",type=string,JSONPath=`.status.nextTransition`
 // +kubebuilder:printcolumn:name="Suspended",type=boolean,JSONPath=`.spec.suspend`
 
 // DeploymentWindow pauses selected Deployments outside allowed time windows.

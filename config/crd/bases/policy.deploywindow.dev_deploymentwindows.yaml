@@ -25,7 +25,7 @@ spec:
       type: integer
     - jsonPath: .status.nextTransition
       name: Next
-      type: date
+      type: string
     - jsonPath: .spec.suspend
       name: Suspended
       type: boolean
