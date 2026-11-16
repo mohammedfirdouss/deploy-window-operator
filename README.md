@@ -1,135 +1,88 @@
 # deploy-window-operator
-// TODO(user): Add simple overview of use/purpose
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator that only lets selected Deployments roll out during allowed time windows, for example weekdays 09:00–17:00 Lagos time. Outside the window it pauses them (`spec.paused: true`), so a new image or config change waits until the window opens. Built with Kubebuilder and controller-runtime.
 
-## Getting Started
+## Why
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+Many teams have a rule like "no production deploys on Friday evening or at the weekend". Usually that rule lives in a wiki page. This operator enforces it in the cluster, whatever tool (kubectl, Argo CD, a CI job) changes the Deployment.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+## How it works
 
-```sh
-make docker-build docker-push IMG=<some-registry>/deploy-window-operator:tag
+```yaml
+apiVersion: policy.deploywindow.dev/v1alpha1
+kind: DeploymentWindow
+metadata:
+  name: business-hours
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      tier: prod
+  timeZone: Africa/Lagos
+  windows:
+    - days: [Mon, Tue, Wed, Thu, Fri]
+      start: "09:00"
+      end: "17:00"
+  suspend: false        # true = emergency fix: release everything
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
-
-```sh
-make install
+```
+$ kubectl get dw
+NAME             OPEN    MATCHED   NEXT                   SUSPENDED
+business-hours   false   3         2026-11-17T08:00:00Z   false
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+The reconcile loop:
+1. Work out whether the window is open now and when that next changes (`internal/schedule`, a pure function with no Kubernetes code).
+2. List Deployments in the namespace and match them against the selector.
+3. **Closed:** pause each matching Deployment and mark it with the annotation `deploywindow.dev/paused-by: <window>`.
+4. **Open, suspended, or the Deployment no longer matches:** resume only the Deployments **this window** paused. A Deployment someone paused by hand has no annotation, so it is left alone.
+5. Write the status: `open`, `nextTransition`, `matchedDeployments`, `pausedDeployments` and a `Ready` condition.
+6. Requeue for exactly the next boundary, so nothing polls.
 
-```sh
-make deploy IMG=<some-registry>/deploy-window-operator:tag
+Other behaviour:
+- **Watches Deployments too.** A new or relabelled Deployment is handled at once, not at the next boundary.
+- **Finalizer.** Deleting a window resumes everything it paused before the object is removed.
+- **Invalid spec** (an unknown time zone, or an end before the start): `Ready=False` with reason `InvalidSpec`, and nothing stays paused.
+- Windows don't cross midnight. For 22:00–02:00, use two windows.
+
+## Demo
+
+`hack/demo.sh` runs the full story on a real cluster. Output from a kind run is in [`docs/demo-output.txt`](docs/demo-output.txt):
+
+1. A closed window pauses the `tier=prod` Deployment.
+2. Changing its image creates **no new ReplicaSet**: the rollout waits.
+3. `suspend: true` resumes it and the rollout completes.
+4. `suspend: false` pauses it again.
+5. Deleting the window resumes it (finalizer).
+
+## Tests
+
+```bash
+make test
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+- `internal/schedule`: table tests for open/closed checks, time zones, back-to-back windows, the weekend wait, and invalid input (93% coverage).
+- `internal/controller`: envtest tests against a real API server with a fake clock. They cover pausing, resuming only what the window paused, time zones, suspend, a Deployment leaving the selector, deletion and invalid specs (77% coverage).
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+## Run it
 
-```sh
-kubectl apply -k config/samples/
+```bash
+kind create cluster
+make install                 # install the CRD
+make run                     # run the controller locally
+kubectl apply -f config/samples/policy_v1alpha1_deploymentwindow.yaml
+hack/demo.sh                 # optional end-to-end demo
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+To deploy in-cluster: `make docker-build docker-push IMG=<registry>/deploy-window-operator:<tag>` then `make deploy IMG=...`.
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+## Limits
 
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/deploy-window-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/deploy-window-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+- Pausing stops **new** rollouts. A rollout already in progress when the window closes stops where it is and finishes when the window opens.
+- Deployments only, not StatefulSets or DaemonSets (they have no `paused` field).
+- One namespace per window.
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+Apache 2.0
