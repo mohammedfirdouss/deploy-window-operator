@@ -32,6 +32,22 @@ NAME             OPEN    MATCHED   NEXT                   SUSPENDED
 business-hours   false   3         2026-11-17T08:00:00Z   false
 ```
 
+```mermaid
+flowchart LR
+    user["you<br/>kubectl apply"] --> dw["DeploymentWindow<br/>(CRD)"]
+    subgraph ctrl["deploy-window-operator"]
+        rec["Reconcile"]
+        sch["schedule.Evaluate<br/>open now? next change?"]
+    end
+    dw -- "watch" --> rec
+    deps["Deployments<br/>(matching selector)"] -- "watch" --> rec
+    rec --> sch
+    rec -- "closed: spec.paused=true<br/>+ paused-by annotation" --> deps
+    rec -- "open / suspended / deleted:<br/>resume only ours" --> deps
+    rec -- "status: open, next,<br/>paused list, Ready" --> dw
+    rec -. "requeue at next boundary" .-> rec
+```
+
 The reconcile loop:
 1. Work out whether the window is open now and when that next changes (`internal/schedule`, a pure function with no Kubernetes code).
 2. List Deployments in the namespace and match them against the selector.
