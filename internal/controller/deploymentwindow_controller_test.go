@@ -40,7 +40,10 @@ var (
 	outsideWindow = time.Date(2026, 11, 16, 20, 0, 0, 0, time.UTC)
 )
 
-const productionTier = "prod"
+const (
+	productionTier = "prod"
+	tierLabel      = "tier"
+)
 
 var _ = Describe("DeploymentWindow controller", func() {
 	ctx := context.Background()
@@ -67,7 +70,7 @@ var _ = Describe("DeploymentWindow controller", func() {
 		dw := &policyv1alpha1.DeploymentWindow{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 			Spec: policyv1alpha1.DeploymentWindowSpec{
-				Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": productionTier}},
+				Selector: metav1.LabelSelector{MatchLabels: map[string]string{tierLabel: productionTier}},
 				TimeZone: tz,
 				Windows: []policyv1alpha1.Window{{
 					Days: []string{"Mon", "Tue", "Wed", "Thu", "Fri"}, Start: "09:00", End: "17:00",
@@ -104,8 +107,8 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("pauses matching Deployments outside the window and leaves others alone", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
-		newDeployment("worker", map[string]string{"tier": "dev"}, false)
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
+		newDeployment("worker", map[string]string{tierLabel: "dev"}, false)
 		newWindow("business-hours", "UTC", false)
 
 		res := reconcileAt(outsideWindow, "business-hours")
@@ -126,8 +129,8 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("resumes only the Deployments it paused when the window opens", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
-		newDeployment("manual", map[string]string{"tier": productionTier}, true) // paused by a person
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
+		newDeployment("manual", map[string]string{tierLabel: productionTier}, true) // paused by a person
 		newWindow("business-hours", "UTC", false)
 
 		reconcileAt(outsideWindow, "business-hours")
@@ -142,7 +145,7 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("applies the time zone", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
 		newWindow("lagos-hours", "Africa/Lagos", false)
 
 		// 16:30 UTC is 17:30 in Lagos: after the 17:00 close.
@@ -151,7 +154,7 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("does not pause anything while suspended, and releases what it paused", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
 		dw := newWindow("business-hours", "UTC", false)
 		reconcileAt(outsideWindow, "business-hours")
 		Expect(getDeployment("api").Spec.Paused).To(BeTrue())
@@ -166,12 +169,12 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("releases a Deployment that no longer matches the selector", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
 		newWindow("business-hours", "UTC", false)
 		reconcileAt(outsideWindow, "business-hours")
 
 		api := getDeployment("api")
-		api.Labels["tier"] = "dev"
+		api.Labels[tierLabel] = "dev"
 		Expect(k8sClient.Update(ctx, api)).To(Succeed())
 		reconcileAt(outsideWindow, "business-hours")
 
@@ -179,7 +182,7 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("resumes its Deployments when the window is deleted", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
 		dw := newWindow("business-hours", "UTC", false)
 		reconcileAt(outsideWindow, "business-hours")
 		Expect(getDeployment("api").Spec.Paused).To(BeTrue())
@@ -193,7 +196,7 @@ var _ = Describe("DeploymentWindow controller", func() {
 	})
 
 	It("reports an invalid time zone and pauses nothing", func() {
-		newDeployment("api", map[string]string{"tier": productionTier}, false)
+		newDeployment("api", map[string]string{tierLabel: productionTier}, false)
 		newWindow("bad-zone", "Mars/Olympus", false)
 
 		reconcileAt(outsideWindow, "bad-zone")
