@@ -5,7 +5,7 @@ package schedule
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -109,7 +109,7 @@ func Evaluate(now time.Time, tz string, windows []Window) (open bool, next time.
 			bounds = append(bounds, day.Add(w.start), day.Add(w.end))
 		}
 	}
-	sort.Slice(bounds, func(i, j int) bool { return bounds[i].Before(bounds[j]) })
+	slices.SortFunc(bounds, func(a, b time.Time) int { return a.Compare(b) })
 	for _, b := range bounds {
 		if !b.After(now) {
 			continue

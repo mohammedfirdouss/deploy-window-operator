@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+const (
+	morningStart  = "09:00"
+	morningTime   = "10:00"
+	noon          = "12:00"
+	mondayClosing = "2026-11-16T17:00:00Z"
+)
+
 func mustTime(t *testing.T, s string) time.Time {
 	t.Helper()
 	v, err := time.Parse(time.RFC3339, s)
@@ -15,7 +22,7 @@ func mustTime(t *testing.T, s string) time.Time {
 }
 
 func TestEvaluate(t *testing.T) {
-	weekdays := []Window{{Days: []string{"Mon", "Tue", "Wed", "Thu", "Fri"}, Start: "09:00", End: "17:00"}}
+	weekdays := []Window{{Days: []string{"Mon", "Tue", "Wed", "Thu", "Fri"}, Start: morningStart, End: "17:00"}}
 
 	tests := []struct {
 		name     string
@@ -25,10 +32,10 @@ func TestEvaluate(t *testing.T) {
 		wantOpen bool
 		wantNext string
 	}{
-		{"inside window", "2026-11-16T10:00:00Z", "UTC", weekdays, true, "2026-11-16T17:00:00Z"},
+		{"inside window", "2026-11-16T10:00:00Z", "UTC", weekdays, true, mondayClosing},
 		{"before window", "2026-11-16T08:00:00Z", "UTC", weekdays, false, "2026-11-16T09:00:00Z"},
-		{"at start is open", "2026-11-16T09:00:00Z", "UTC", weekdays, true, "2026-11-16T17:00:00Z"},
-		{"at end is closed", "2026-11-16T17:00:00Z", "UTC", weekdays, false, "2026-11-17T09:00:00Z"},
+		{"at start is open", "2026-11-16T09:00:00Z", "UTC", weekdays, true, mondayClosing},
+		{"at end is closed", mondayClosing, "UTC", weekdays, false, "2026-11-17T09:00:00Z"},
 		{"friday evening waits for monday", "2026-11-20T18:00:00Z", "UTC", weekdays, false, "2026-11-23T09:00:00Z"},
 		{"weekend closed", "2026-11-21T12:00:00Z", "UTC", weekdays, false, "2026-11-23T09:00:00Z"},
 		// 09:30 UTC is 10:30 in Lagos (UTC+1): open, closes at 17:00 Lagos = 16:00 UTC.
@@ -36,15 +43,15 @@ func TestEvaluate(t *testing.T) {
 		{
 			"back-to-back windows merge", "2026-11-16T11:30:00Z", "UTC",
 			[]Window{
-				{Days: []string{"Mon"}, Start: "09:00", End: "12:00"},
-				{Days: []string{"Mon"}, Start: "12:00", End: "15:00"},
+				{Days: []string{"Mon"}, Start: morningStart, End: noon},
+				{Days: []string{"Mon"}, Start: noon, End: "15:00"},
 			},
 			true, "2026-11-16T15:00:00Z",
 		},
 		{
 			"two windows with a gap", "2026-11-16T12:30:00Z", "UTC",
 			[]Window{
-				{Days: []string{"Mon"}, Start: "09:00", End: "12:00"},
+				{Days: []string{"Mon"}, Start: morningStart, End: noon},
 				{Days: []string{"Mon"}, Start: "14:00", End: "16:00"},
 			},
 			false, "2026-11-16T14:00:00Z",
@@ -73,10 +80,10 @@ func TestEvaluateErrors(t *testing.T) {
 		tz      string
 		windows []Window
 	}{
-		{"unknown zone", "Mars/Olympus", []Window{{Days: []string{"Mon"}, Start: "09:00", End: "10:00"}}},
+		{"unknown zone", "Mars/Olympus", []Window{{Days: []string{"Mon"}, Start: morningStart, End: morningTime}}},
 		{"no windows", "UTC", nil},
-		{"bad day", "UTC", []Window{{Days: []string{"Funday"}, Start: "09:00", End: "10:00"}}},
-		{"bad time", "UTC", []Window{{Days: []string{"Mon"}, Start: "9am", End: "10:00"}}},
+		{"bad day", "UTC", []Window{{Days: []string{"Funday"}, Start: morningStart, End: morningTime}}},
+		{"bad time", "UTC", []Window{{Days: []string{"Mon"}, Start: "9am", End: morningTime}}},
 		{"end before start", "UTC", []Window{{Days: []string{"Mon"}, Start: "22:00", End: "02:00"}}},
 	}
 	for _, tc := range tests {
