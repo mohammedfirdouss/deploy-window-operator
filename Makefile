@@ -94,6 +94,14 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+# Build and run golangci-lint with the Go version from go.mod, as CI does (setup-go go-version-file).
+# A newer local Go writes stdlib export data the linter can't read ("export data version 5 is
+# greater than maximum supported version 4"), which shows up as typecheck errors on every import.
+# "+auto" still lets go switch up if a dependency needs a newer patch release.
+# Override with LINT_GOTOOLCHAIN=local to use whatever go is on PATH.
+LINT_GOTOOLCHAIN ?= go$(shell awk '/^go /{print $$2}' go.mod)+auto
+lint lint-fix lint-config golangci-lint: export GOTOOLCHAIN = $(LINT_GOTOOLCHAIN)
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run
